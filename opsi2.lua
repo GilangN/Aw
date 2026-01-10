@@ -1404,13 +1404,38 @@ local function PlayFromSpecificFrame(recording, startFrame, recordingName)
     UpdatePlayButtonStatus()
 end
 
+-- ========= FITUR BARU: WALK TO START POINT =========
+local function WalkToPoint(targetPosition)
+    local char = player.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    
+    if not hum or not hrp then return end
+
+    -- Hitung jarak
+    local distance = (hrp.Position - targetPosition).Magnitude
+    
+    -- Jika terlalu jauh (lebih dari 30 meter), sebaiknya teleport saja atau batalkan
+    -- Jika dekat (misal 0.5 - 30 meter), kita suruh karakter jalan
+    if distance > 0.5 and distance < 30 then
+        hum:MoveTo(targetPosition)
+        
+        -- Tunggu sampai sampai atau timeout 3 detik
+        local startWait = tick()
+        repeat 
+            task.wait() 
+        until (hrp.Position - targetPosition).Magnitude < 1.5 or (tick() - startWait) > 3
+    end
+end
+
+-- ========= MODIFIKASI FUNGSI PLAY (SmartPlayRecording) =========
 local function SmartPlayRecording(maxDistance)
     if IsPlaying or IsAutoLoopPlaying then return end
     
     local char = player.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then
-        PlaySound("Error")
-        return
+    if not char or not char:FindFirstChild("HumanoidRootPart") then 
+        PlaySound("Error") 
+        return 
     end
 
     local currentPos = char.HumanoidRootPart.Position
@@ -1418,12 +1443,12 @@ local function SmartPlayRecording(maxDistance)
     local bestFrame = 1
     local bestDistance = math.huge
     local bestRecordingName = nil
-    
+
+    -- Cari titik terdekat
     for _, recordingName in ipairs(RecordingOrder) do
         local recording = RecordedMovements[recordingName]
         if recording and #recording > 0 then
             local nearestFrame, frameDistance = FindNearestFrame(recording, currentPos)
-            
             if frameDistance < bestDistance and frameDistance <= (maxDistance or 50) then
                 bestDistance = frameDistance
                 bestRecording = recording
@@ -1432,6 +1457,24 @@ local function SmartPlayRecording(maxDistance)
             end
         end
     end
+
+    if bestRecording then
+        -- TAMBAHAN: Jalan ke titik tersebut sebelum mulai playback
+        local targetFrame = bestRecording[bestFrame]
+        local targetPos = Vector3.new(targetFrame.Position[1], targetFrame.Position[2], targetFrame.Position[3])
+        
+        -- Berikan indikasi visual atau suara bahwa karakter sedang memposisikan diri
+        if PlayBtnControl then PlayBtnControl.Text = "WALKING..." end
+        
+        task.spawn(function()
+            WalkToPoint(targetPos)
+            -- Setelah sampai, baru jalankan playback asli
+            PlayFromSpecificFrame(bestRecording, bestFrame, bestRecordingName)
+        end)
+    else
+        PlaySound("Error")
+    end
+end
     
     if bestRecording then
         PlayFromSpecificFrame(bestRecording, bestFrame, bestRecordingName)
